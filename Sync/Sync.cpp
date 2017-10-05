@@ -302,12 +302,13 @@ ASCIIStrMap_REC ascii_rec = {
 
 
 // Simulates chance of transmission error
-// Randomly generates a number 0-100. If rand# >= errChance
+// Randomly generates a number 1-100. If rand# >= errChance
 // Randomly changes one bit of the string being transmitted into either 0 or 1
 string transError(string s, int errChance) {
 	srand((unsigned int)time(NULL));
+
 	if ((rand() % 100 + 1) <= errChance ) {
-		s.at(rand() % 8) = (char) (rand() % 2);
+		s.at(rand() % 8) = (char) ((rand() % 2)+'0');
 	}
 	return s;
 }
@@ -368,7 +369,7 @@ void checkStrings() {
 			pcount++;
 		}
 
-		outFile << s << "(" << pcount << "): " << c << endl;
+		outFile << transError(s, 50) << "(" << pcount << "): " << c << endl;
 		c = 0;
 		pcount = 0;
 	}
