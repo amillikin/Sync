@@ -29,6 +29,12 @@ typedef const unordered_map<std::string, int> ASCIIStrMap_REC;
 ifstream inFile;
 ofstream outFile;
 
+struct frame
+{
+	char synChars[16];
+	char dataChars[64];
+};
+
 /*
 	Constant Map for ASCII containing characters representing binary number WITH odd parity
 	LITTLE endian
@@ -300,10 +306,11 @@ ASCIIStrMap_REC ascii_rec = {
 	{ "11111110", 127 }  // DEL
 };
 
-
-// Simulates chance of transmission error
-// Randomly generates a number 1-100. If rand# >= errChance
-// Randomly changes one bit of the string being transmitted into either 0 or 1
+/* 
+	Simulates chance of transmission error
+	Randomly generates a number 1-100. If rand# >= errChance
+	Randomly changes one bit of the string being transmitted into either 0 or 1
+*/
 string transError(string s, int errChance) {
 	srand((unsigned int)time(NULL));
 
@@ -313,7 +320,99 @@ string transError(string s, int errChance) {
 	return s;
 }
 
-//Determines total number of 1 bits in a binary number. -ARM
+/* 
+	Transmits data from inFile to outFile with frames of 
+	64 character data blocks preceded by two SYN characters
+	All characters in data block are subject to transmission
+	errors, at a hard coded 10% chance.
+*/
+void transWithErr() {
+	int cnt = 0;
+	char c = 0;
+	int errChance = 10; //10% chance of error on transmission
+
+	// Sends binary representation (as '0' and '1' chars) of SYN twice. 
+	outFile << ascii_trans.at(22) << ascii_trans.at(22);
+	while (inFile.get(c)) {
+		if (cnt == 63) {
+			// New block, send SYN twice.
+			outFile << ascii_trans.at(22) << ascii_trans.at(22);
+			cnt = 0;
+		}
+		else cnt++;
+
+		// Runs current char through transmission error generator
+		// Returns resulting binary string (as '0' and '1')
+		try {
+			outFile << transError(ascii_trans.at(c), errChance);
+		}
+		catch (int e) {
+			cout << "An exception occurred. Exception Nr. " << e << endl;
+		}
+	}
+}
+
+/*
+	Transmits data from inFile to outFile with frames of
+	64 character data blocks preceded by two SYN characters
+*/
+void transWithOutErr() {
+	int cnt = 0;
+	char c = 0;
+
+	// Sends binary representation (as '0' and '1' chars) of SYN twice. 
+	outFile << ascii_trans.at(22) << ascii_trans.at(22);
+	while (inFile.get(c)) {
+		if (cnt == 63) {
+			// New block, send SYN twice.
+			outFile << ascii_trans.at(22) << ascii_trans.at(22);
+			cnt = 0;
+		}
+		else cnt++;
+
+		// Transmit char in binary (as '0' and '1' chars) with odd parity
+		try {
+			outFile << ascii_trans.at(c);
+		}
+		catch (int e) {
+			cout << "An exception occurred. Exception Nr. " << e << endl;
+		}
+	}
+}
+
+
+void receive() {
+	int fileSize, frameCnt, dataBytesLeft;
+	frame fullFrame;
+
+	//Get Filesize
+	fileSize = 0;
+	inFile.seekg(0, ios::end);
+	fileSize = inFile.tellg();
+	inFile.seekg(0, ios::beg);
+
+	//Break filesize into each full frame
+	//16 chars (SYN SYN) + 64 data chars = 80 chars
+	frameCnt = fileSize / 80;
+
+	//Determine size, if any, of data leftover after full frames
+	//Get remainder of division, subtract 16 bytes of SYN SYN to remaining data
+	dataBytesLeft = (fileSize % 80) - 16;
+
+	//Read all full frames
+	//Check SYN as first two chars
+	//
+	while (frameCnt > 0) {
+		inFile.read((char *)&fullFrame, sizeof(fullFrame));
+		if (fullFrame.synChars != ascii_trans.at(22)) {
+			cout << "Invalid Frame." << endl;
+		}
+
+	}
+
+}
+
+//Determines total number of 1 bits in a binary number.
 int byteOnes(char byte) {
 	int count;
 	count = 0;
@@ -365,23 +464,22 @@ void checkStrings() {
 			pcount++;
 		}
 		if (s.at(7) == '1') {
-			//c += 1;
 			pcount++;
 		}
 
-		outFile << transError(s, 50) << "(" << pcount << "): " << c << endl;
+		outFile << transError(s, 50) << "(" << pcount % 2 << "): " << c << endl;
 		c = 0;
 		pcount = 0;
 	}
 }
 
-//Converts a string to all uppercase characters - ARM
+//Converts a string to all uppercase characters
 string upCase(string str) {
 	transform(str.begin(), str.end(), str.begin(), toupper);
 	return str;
 }
 
-//Checks valid mode - ARM
+//Checks valid mode
 bool validMode(string mode) {
 	if (mode == "TE" || mode == "TN" || mode == "R") {
 		return true;
@@ -402,8 +500,6 @@ int main(int argc, char* argv[]) {
 	clock_t startTime = clock(), endTime;
 	double secondsElapsed;
 	string mode;
-	char c;
-	int cnt, fileSize;
 
 	if (argc != 4) {
 		cout << "Incorrect number of arguments supplied." << endl;
@@ -431,58 +527,18 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	//Get Filesize
-	fileSize = 0;
-	inFile.seekg(0, ios::end);
-	fileSize = inFile.tellg();
-	inFile.seekg(0, ios::beg);
+	//checkStrings();
 
-	checkStrings();
-/*
 	if (mode == "TN") {
-		cnt = 0;
-		// Sends binary representation (as '0' and '1' chars) of SYN twice. 
-		outFile << ascii_trans.at(22) << ascii_trans.at(22);
-		while (inFile.get(c)) {
-			if (cnt == 63) {
-				// New block, send SYN twice.
-				outFile << ascii_trans.at(22) << ascii_trans.at(22);
-				cnt = 0;
-			}
-			else cnt++;
-
-			// Transmit char in binary (as '0' and '1' chars) with odd parity
-			try {
-				outFile << ascii_trans.at(c);
-			}
-			catch (int e) {
-				cout << "An exception occurred. Exception Nr. " << e << endl;
-			}
-		}
+		transWithOutErr();
 	}
 	else if (mode == "TE") {
-		while (inFile.get(c)) {
-			if (cnt == 63) {
-				// New block, send SYN twice.
-				outFile << ascii_trans.at(22) << ascii_trans.at(22);
-				cnt = 0;
-			}
-			else cnt++;
-
-			// Transmit char in binary (as '0' and '1' chars) with odd parity
-			try {
-				outFile << ascii_trans.at(c);
-			}
-			catch (int e) {
-				cout << "An exception occurred. Exception Nr. " << e << endl;
-			}
-
-		}
+		transWithErr();
 	}
 	else if (mode == "R") {
-
+		receive();
 	}
-*/
+
 	inFile.close();
 	outFile.close();
 
