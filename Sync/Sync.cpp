@@ -29,10 +29,10 @@ typedef const unordered_map<std::string, int> ASCIIStrMap_REC;
 ifstream inFile;
 ofstream outFile;
 
-struct frame
+struct frameHeader
 {
 	char synChars[16];
-	char dataChars[64];
+	char lenChar[8];
 };
 
 /*
@@ -55,7 +55,7 @@ ASCIIStrMap_TRANS ascii_trans = {
 	{  11, "11010000" }, // VT (vertical tab)
 	{  12, "00110001" }, // FF (NP form feed, new page)
 	{  13, "10110000" }, // CR (carriage return)
-	{  14, "01110000" }, // SO (shift out)
+	{  14, "01110000" }, // SO (shift out) 
 	{  15, "11110001" }, // SI (shift in)
 	{  16, "00001000" }, // DLE (data link escape)
 	{  17, "10001001" }, // DC1 (device control 1)
@@ -306,10 +306,42 @@ ASCIIStrMap_REC ascii_rec = {
 	{ "11111110", 127 }  // DEL
 };
 
+//Returns whether a binary string (0 and 1 characters) received is valid
+bool validChar(char charIn[8]) {
+	if (ascii_rec.find(charIn) != ascii_rec.end()) {
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
+//Returns FileSize
+int getFileSize() {
+	int fileSize = 0;
+
+	inFile.seekg(0, ios::end);
+	fileSize = inFile.tellg();
+	inFile.seekg(0, ios::beg);
+
+	return fileSize;
+}
+
+//Determines if a byte has odd parity
+int isOddParity(char byte) {
+	int count = 0;
+	while (byte > 0) {
+		count++;
+		byte &= (byte - 1);
+	}
+	return count % 2;
+}
+
 /* 
 	Simulates chance of transmission error
-	Randomly generates a number 1-100. If rand# >= errChance
-	Randomly changes one bit of the string being transmitted into either 0 or 1
+	Randomly generates a number 1-100. If rand# <= errChance
+	Randomly changes a random bit of the string being transmitted into either 0 or 1
+	NOTE: Even if an error is triggered, the error might be benign
 */
 string transError(string s, int errChance) {
 	srand((unsigned int)time(NULL));
@@ -318,109 +350,6 @@ string transError(string s, int errChance) {
 		s.at(rand() % 8) = (char) ((rand() % 2)+'0');
 	}
 	return s;
-}
-
-/* 
-	Transmits data from inFile to outFile with frames of 
-	64 character data blocks preceded by two SYN characters
-	All characters in data block are subject to transmission
-	errors, at a hard coded 10% chance.
-*/
-void transWithErr() {
-	int cnt = 0;
-	char c = 0;
-	int errChance = 10; //10% chance of error on transmission
-
-	// Sends binary representation (as '0' and '1' chars) of SYN twice. 
-	outFile << ascii_trans.at(22) << ascii_trans.at(22);
-	while (inFile.get(c)) {
-		if (cnt == 63) {
-			// New block, send SYN twice.
-			outFile << ascii_trans.at(22) << ascii_trans.at(22);
-			cnt = 0;
-		}
-		else cnt++;
-
-		// Runs current char through transmission error generator
-		// Returns resulting binary string (as '0' and '1')
-		try {
-			outFile << transError(ascii_trans.at(c), errChance);
-		}
-		catch (int e) {
-			cout << "An exception occurred. Exception Nr. " << e << endl;
-		}
-	}
-}
-
-/*
-	Transmits data from inFile to outFile with frames of
-	64 character data blocks preceded by two SYN characters
-*/
-void transWithOutErr() {
-	int cnt = 0;
-	char c = 0;
-
-	// Sends binary representation (as '0' and '1' chars) of SYN twice. 
-	outFile << ascii_trans.at(22) << ascii_trans.at(22);
-	while (inFile.get(c)) {
-		if (cnt == 63) {
-			// New block, send SYN twice.
-			outFile << ascii_trans.at(22) << ascii_trans.at(22);
-			cnt = 0;
-		}
-		else cnt++;
-
-		// Transmit char in binary (as '0' and '1' chars) with odd parity
-		try {
-			outFile << ascii_trans.at(c);
-		}
-		catch (int e) {
-			cout << "An exception occurred. Exception Nr. " << e << endl;
-		}
-	}
-}
-
-
-void receive() {
-	int fileSize, frameCnt, dataBytesLeft;
-	frame fullFrame;
-
-	//Get Filesize
-	fileSize = 0;
-	inFile.seekg(0, ios::end);
-	fileSize = inFile.tellg();
-	inFile.seekg(0, ios::beg);
-
-	//Break filesize into each full frame
-	//16 chars (SYN SYN) + 64 data chars = 80 chars
-	frameCnt = fileSize / 80;
-
-	//Determine size, if any, of data leftover after full frames
-	//Get remainder of division, subtract 16 bytes of SYN SYN to remaining data
-	dataBytesLeft = (fileSize % 80) - 16;
-
-	//Read all full frames
-	//Check SYN as first two chars
-	//
-	while (frameCnt > 0) {
-		inFile.read((char *)&fullFrame, sizeof(fullFrame));
-		if (fullFrame.synChars != ascii_trans.at(22)) {
-			cout << "Invalid Frame." << endl;
-		}
-
-	}
-
-}
-
-//Determines total number of 1 bits in a binary number.
-int byteOnes(char byte) {
-	int count;
-	count = 0;
-	while (byte > 0) {
-		count++;
-		byte &= (byte - 1);
-	}
-	return count;
 }
 
 //Test String Values from Map for Correctness
@@ -471,6 +400,147 @@ void checkStrings() {
 		c = 0;
 		pcount = 0;
 	}
+}
+
+/* 
+	Transmits data from inFile to outFile with frames of 
+	64 character data blocks preceded by two SYN characters
+	All characters transmitted are subject to transmission
+	errors, at a hard coded 10% chance.
+*/
+int transWithErr() {
+	int fileSize, frameCnt, dataBytesLeft;
+	const int errChance = 10;
+	char c = 0;
+
+	//Get Filesize
+	fileSize = getFileSize();
+
+	//Break filesize into 64 byte data blocks
+	frameCnt = fileSize / 64;
+
+	//Determine size, if any, of data leftover after full frames
+	dataBytesLeft = (fileSize % 64);
+
+	//Read all full frames
+	for (int i = 0; i < frameCnt; i++) {
+		// New block, send SYN twice, length 64.
+		outFile << transError(ascii_trans.at(22), errChance) << transError(ascii_trans.at(22), errChance) << transError(ascii_trans.at(64), errChance);
+
+		for (int j = 0; j < 64; j++) {
+			// Transmit char in binary (as '0' and '1' chars) with odd parity
+			inFile.get(c);
+			outFile << transError(ascii_trans.at(c), errChance);
+		}
+	}
+
+	//If there are data bytes left after the last full frame
+	//Write the SYN characters, the size, and then
+	//Transmit each char in binary (as '0' and '1' chars) with odd parity
+	if (dataBytesLeft > 0) {
+		outFile << transError(ascii_trans.at(22), errChance) << transError(ascii_trans.at(22), errChance) << transError(ascii_trans.at(dataBytesLeft), errChance);
+		while (inFile.get(c)) {
+			outFile << transError(ascii_trans.at(c), errChance);
+		}
+	}
+	return 0;
+}
+
+/*
+	Transmits data from inFile to outFile with frames of
+	64 character data blocks preceded by two SYN characters
+*/
+int transWithOutErr() {
+	int fileSize, frameCnt, dataBytesLeft;
+	char c = 0;
+
+	//Get Filesize
+	fileSize = getFileSize();
+
+	//Break filesize into 64 byte data blocks
+	frameCnt = fileSize / 64;
+
+	//Determine size, if any, of data leftover after full frames
+	dataBytesLeft = (fileSize % 64);
+
+	//Read all full frames
+	for (int i = 0; i < frameCnt; i++) {
+		// New block, send SYN twice, length 64.
+		outFile << "011010000110100000000010"; //CHR(22)+CHR(22)+CHR(64)
+		for (int j = 0; j < 64; j++) {
+			// Transmit char in binary (as '0' and '1' chars) with odd parity
+			inFile.get(c);
+			outFile << ascii_trans.at(c);
+		}
+	}
+
+	//If there are data bytes left after the last full frame
+	//Write the SYN characters, the size, and then
+	//Transmit each char in binary (as '0' and '1' chars) with odd parity
+	if (dataBytesLeft > 0) {
+		outFile << "0110100001101000" << ascii_trans.at(dataBytesLeft); //CHR(22)+CHR(22)+DATA SIZE CHAR
+		for (int i = 0; i < dataBytesLeft; i++) {
+			inFile.get(c);
+			outFile << ascii_trans.at(c);
+		}
+	}
+	return 0;
+}
+
+
+int receive() {
+	int fileSize, frameCnt, dataBytesLeft, dataSize;
+	char dataChar[8];
+	const char synChars[16] = {'0','1','1','0','1','0','0','0','0','1','1','0','1','0','0','0'};
+	frameHeader fh;
+
+	//Get Filesize
+	fileSize = getFileSize();
+
+	//Break filesize into each full frame
+	//16 chars (SYN SYN) + 8 chars (length char) + 512 (64*8) data chars = 536 chars
+	frameCnt = fileSize / 536;
+
+	//Determine size, if any, of data leftover after full frames
+	//Get remainder of division, subtract 16 bytes of SYN SYN, 8 bytes of length char
+	//dataBytesLeft = (fileSize % 536) - 24;
+
+	//Determines if there is a frame with less than 64 data characters, if so, add one to frameCnt
+	if (fileSize % 536 > 0) frameCnt++;
+
+	//Read all full frames
+	//Check SYN as first two chars
+	for (int i = 0; i < frameCnt; i++) {
+		inFile.read((char *)&fh, sizeof(fh));
+		if (strcmp(synChars, fh.synChars) != 1) {
+			cout << "SYN character error detected." << endl;
+			return 1;
+		}
+
+		string s(fh.lenChar,fh.lenChar+8);
+
+		if (ascii_rec.find(s) != ascii_rec.end()) {
+			dataSize = ascii_rec.at(s);
+		}
+		else {
+			cout << "Length character error detected." << endl;
+			return 1;
+		}
+
+		for (int j = 0; j < dataSize; j++) {
+			inFile.read((char *)&dataChar, sizeof(dataChar));
+			string s(dataChar, dataChar + 8);
+			if (ascii_rec.find(s) != ascii_rec.end()) {
+				outFile << (char)ascii_rec.at(s);
+			}
+			else {
+				cout << "Data character error detected." << endl;
+				return 1;
+			}
+		}
+	}
+
+	return 0;
 }
 
 //Converts a string to all uppercase characters
@@ -530,13 +600,13 @@ int main(int argc, char* argv[]) {
 	//checkStrings();
 
 	if (mode == "TN") {
-		transWithOutErr();
+		if (transWithOutErr() == 1) return EXIT_FAILURE;
 	}
 	else if (mode == "TE") {
-		transWithErr();
+		if (transWithErr() == 1) return EXIT_FAILURE;
 	}
 	else if (mode == "R") {
-		receive();
+		if (receive() == 1) return EXIT_FAILURE;
 	}
 
 	inFile.close();
