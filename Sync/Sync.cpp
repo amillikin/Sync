@@ -306,16 +306,6 @@ ASCIIStrMap_REC ascii_rec = {
 	{ "11111110", 127 }  // DEL
 };
 
-//Returns whether a binary string (0 and 1 characters) received is valid
-bool validChar(char charIn[8]) {
-	if (ascii_rec.find(charIn) != ascii_rec.end()) {
-		return true;
-	}
-	else {
-		return false;
-	}
-}
-
 //Returns FileSize
 int getFileSize() {
 	int fileSize = 0;
@@ -489,7 +479,7 @@ int transWithOutErr() {
 
 
 int receive() {
-	int fileSize, frameCnt, dataBytesLeft, dataSize;
+	int fileSize, frameCnt, dataSize;
 	char dataChar[8];
 	const char synChars[16] = {'0','1','1','0','1','0','0','0','0','1','1','0','1','0','0','0'};
 	frameHeader fh;
@@ -583,14 +573,14 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	inFile.open(argv[2], ios::in);
+	inFile.open(argv[2], ios::in | ios::binary);
 	if (!inFile) {
 		cout << "Can't open input file " << argv[1] << endl;
 		prompt();
 		return EXIT_FAILURE;
 	}
 
-	outFile.open(argv[3], ios::out);
+	outFile.open(argv[3], ios::out | ios::binary);
 	if (!outFile) {
 		cout << "Can't open output file " << argv[2] << endl;
 		prompt();
