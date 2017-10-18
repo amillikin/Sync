@@ -11,7 +11,8 @@ class sync_data {
 public:
 
 	// Struct to hold constant maps used in converting streams during read/write
-	struct ascii_map {
+	struct ascii_map 
+	{
 		/*
 		Constant Map for ASCII containing characters representing binary number WITH odd parity
 		LITTLE endian
@@ -290,7 +291,7 @@ public:
 			return rmap;
 		}
 		static const std::unordered_map<std::string, int> ascii_rec;
-};
+	};
 
 
 

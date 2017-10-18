@@ -24,8 +24,8 @@ int sync_phys::transWithErr(ifstream& inFile, ofstream& outFile) {
 	for (int i = 0; i < frameCnt; i++) {
 		// New block, send SYN twice, length 64.
 		outFile << sync_data::transError(sync_data::ascii_map::ascii_trans.at(22), errChance)
-			    << sync_data::transError(sync_data::ascii_map::ascii_trans.at(22), errChance)
-			    << sync_data::transError(sync_data::ascii_map::ascii_trans.at(64), errChance);
+			<< sync_data::transError(sync_data::ascii_map::ascii_trans.at(22), errChance)
+			<< sync_data::transError(sync_data::ascii_map::ascii_trans.at(64), errChance);
 
 		for (int j = 0; j < 64; j++) {
 			// Transmit char in binary (as '0' and '1' chars) with odd parity
@@ -39,8 +39,8 @@ int sync_phys::transWithErr(ifstream& inFile, ofstream& outFile) {
 	//Transmit each char in binary (as '0' and '1' chars) with odd parity
 	if (dataBytesLeft > 0) {
 		outFile << sync_data::transError(sync_data::ascii_map::ascii_trans.at(22), errChance)
-			    << sync_data::transError(sync_data::ascii_map::ascii_trans.at(22), errChance)
-			    << sync_data::transError(sync_data::ascii_map::ascii_trans.at(dataBytesLeft), errChance);
+			<< sync_data::transError(sync_data::ascii_map::ascii_trans.at(22), errChance)
+			<< sync_data::transError(sync_data::ascii_map::ascii_trans.at(dataBytesLeft), errChance);
 		while (inFile.get(c)) {
 			outFile << sync_data::transError(sync_data::ascii_map::ascii_trans.at(c), errChance);
 		}
@@ -88,7 +88,7 @@ int sync_phys::transWithOutErr(ifstream& inFile, ofstream& outFile) {
 int sync_phys::receive(ifstream& inFile, ofstream& outFile) {
 	int fileSize, frameCnt, dataSize;
 	char dataChar[8];
-	const char synChars[16] = { '0','1','1','0','1','0','0','0','0','1','1','0','1','0','0','0' };
+	const string synChars = "0110100001101000";
 	sync_data::frameHeader fh;
 
 	//Get Filesize
@@ -109,15 +109,16 @@ int sync_phys::receive(ifstream& inFile, ofstream& outFile) {
 	//Check SYN as first two chars
 	for (int i = 0; i < frameCnt; i++) {
 		inFile.read((char *)&fh, sizeof(fh));
-		if (strcmp(synChars, fh.synChars) != 1) {
+		string strSyn(fh.synChars, fh.synChars + 16);
+		if (synChars != strSyn) {
 			cout << "SYN character error detected." << endl;
 			return 1;
 		}
 
-		string s(fh.lenChar, fh.lenChar + 8);
+		string strLen(fh.lenChar, fh.lenChar + 8);
 
-		if (sync_data::ascii_map::ascii_rec.find(s) != sync_data::ascii_map::ascii_rec.end()) {
-			dataSize = sync_data::ascii_map::ascii_rec.at(s);
+		if (sync_data::ascii_map::ascii_rec.find(strLen) != sync_data::ascii_map::ascii_rec.end()) {
+			dataSize = sync_data::ascii_map::ascii_rec.at(strLen);
 		}
 		else {
 			cout << "Length character error detected." << endl;
@@ -126,9 +127,9 @@ int sync_phys::receive(ifstream& inFile, ofstream& outFile) {
 
 		for (int j = 0; j < dataSize; j++) {
 			inFile.read((char *)&dataChar, sizeof(dataChar));
-			string s(dataChar, dataChar + 8);
-			if (sync_data::ascii_map::ascii_rec.find(s) != sync_data::ascii_map::ascii_rec.end()) {
-				outFile << (char)sync_data::ascii_map::ascii_rec.at(s);
+			string strData(dataChar, dataChar + 8);
+			if (sync_data::ascii_map::ascii_rec.find(strData) != sync_data::ascii_map::ascii_rec.end()) {
+				outFile << (char)sync_data::ascii_map::ascii_rec.at(strData);
 			}
 			else {
 				cout << "Data character error detected." << endl;
